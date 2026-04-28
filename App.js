@@ -14,14 +14,25 @@ import {
   Clipboard,
 } from 'react-native';
 
-const API_URL = 'http://localhost:8001/api/v1';
-const SESSION_ID = 'user-' + Math.random().toString(36).slice(2, 9);
+const ANTHROPIC_API_KEY = 'YOUR_API_KEY_HERE'; // замени на свой ключ
+const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
+const MODEL = 'claude-opus-4-7';
+
+const SYSTEM_PROMPT = `Ты — AI Консультант. Ты помогаешь разработчикам с их вопросами.
+
+Твои возможности:
+- 🎨 Дизайн — UI/UX советы, цветовые схемы, макеты
+- 💻 Написание кода — React Native, Python, JavaScript и другие языки
+- 🧪 Тестирование — поиск багов, написание тестов, code review
+- 💼 Консультации — архитектура, выбор технологий, лучшие практики
+
+Отвечай кратко и по делу. Используй примеры кода когда нужно.`;
 
 const QUICK_REPLIES = [
-  { id: '1', label: '💼 Консультация', text: 'Мне нужна консультация' },
-  { id: '2', label: '❓ Вопрос', text: 'У меня есть вопрос' },
-  { id: '3', label: '📋 Задача', text: 'Помоги решить задачу' },
-  { id: '4', label: '📊 Анализ', text: 'Проведи анализ' },
+  { id: '1', label: '🎨 Дизайн', text: 'Помоги с дизайном приложения' },
+  { id: '2', label: '💻 Написать код', text: 'Напиши код для' },
+  { id: '3', label: '🧪 Найти баг', text: 'Помоги найти и исправить ошибку' },
+  { id: '4', label: '💼 Консультация', text: 'Мне нужна консультация' },
 ];
 
 function TypingIndicator() {
@@ -89,6 +100,8 @@ export default function App() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const listRef = useRef(null);
+  // История для Claude API (без служебных полей id/time)
+  const historyRef = useRef([]);
 
   const sendMessage = useCallback(async (overrideText) => {
     const text = (overrideText ?? input).trim();
@@ -99,24 +112,41 @@ export default function App() {
     setInput('');
     setLoading(true);
 
+    // Добавляем в историю для API
+    historyRef.current = [...historyRef.current, { role: 'user', content: text }];
+
     try {
-      const res = await fetch(`${API_URL}/chat`, {
+      const res = await fetch(ANTHROPIC_API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: SESSION_ID, message: text }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          max_tokens: 8192,
+          system: SYSTEM_PROMPT,
+          messages: historyRef.current,
+        }),
       });
       const data = await res.json();
+      const reply = data.content?.[0]?.text ?? 'Нет ответа от модели.';
+
+      // Добавляем ответ в историю
+      historyRef.current = [...historyRef.current, { role: 'assistant', content: reply }];
+
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        text: data.response,
+        text: reply,
         time: now(),
       }]);
     } catch {
       setMessages(prev => [...prev, {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        text: 'Ошибка соединения. Попробуйте позже.',
+        text: 'Ошибка соединения. Проверьте API ключ.',
         time: now(),
       }]);
     } finally {
@@ -125,6 +155,7 @@ export default function App() {
   }, [input, loading]);
 
   const clearChat = useCallback(() => {
+    historyRef.current = [];
     setMessages([{ id: '0', role: 'assistant', text: 'Здравствуйте! Чем могу помочь?', time: now() }]);
   }, []);
 
@@ -139,7 +170,7 @@ export default function App() {
             <Text style={styles.headerTitle}>AI Консультант</Text>
             <View style={styles.statusRow}>
               <View style={styles.statusDot} />
-              <Text style={styles.statusText}>Groq · Llama 3.3 70B</Text>
+              <Text style={styles.statusText}>Claude · Opus 4.7</Text>
             </View>
           </View>
         </View>
